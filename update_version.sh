@@ -40,7 +40,7 @@ EOF
 }
 
 fetch_tags() {
-    local page_size="${1:-25}"
+    local page_size="${1:-100}"
     local url="${DOCKER_HUB_API}?page_size=${page_size}&ordering=last_updated"
 
     local response
@@ -116,11 +116,48 @@ list_tags() {
 
     echo ""
 
-    local latest_version
-    latest_version=$(echo "$tags" | head -1 | jq -r '.[0]' 2>/dev/null)
-    if [[ "$latest_version" =~ ^v[0-9] ]]; then
-        show_release_info "$latest_version"
+    local version_tags=()
+    while IFS= read -r line; do
+        [ -z "$line" ] && continue
+        local tag
+        tag=$(echo "$line" | jq -r '.[0]')
+        [[ "$tag" =~ ^v[0-9] ]] && [[ "$tag" != *-* ]] && version_tags+=("$tag")
+    done <<< "$tags"
+
+    if [ ${#version_tags[@]} -eq 0 ]; then
+        return 0
     fi
+
+    echo "--- Release summaries ---"
+    echo ""
+
+    local release_json
+    release_json=$(curl -s "https://api.github.com/repos/vllm-project/vllm/releases?per_page=${#version_tags[@]}" 2>/dev/null || echo "")
+
+    for vtag in "${version_tags[@]}"; do
+        local date body summary
+        date=$(echo "$release_json" | jq -r --arg t "$vtag" '.[] | select(.tag_name == $t) | .published_at // "unknown"' 2>/dev/null)
+        body=$(echo "$release_json" | jq -r --arg t "$vtag" '.[] | select(.tag_name == $t) | .body // ""' 2>/dev/null)
+
+        if [ -n "$body" ]; then
+            summary=$(echo "$body" | tr -d '\r' | sed '/^#/d; /^$/d; /^```/d; /^---/d' | head -1 | cut -c1-120) || true
+        fi
+
+        formatted_date=""
+        if [ "$date" != "unknown" ] && [ -n "$date" ]; then
+            formatted_date="($(date -d "$date" +%Y-%m-%d 2>/dev/null))"
+        fi
+
+        if [ -n "$summary" ]; then
+            printf "  ${GREEN}%-15s${NC}  %-14s %s\n" "$vtag" "$formatted_date" "$summary"
+        elif [ -n "$date" ] && [ "$date" != "unknown" ]; then
+            printf "  ${GREEN}%-15s${NC}  %-14s\n" "$vtag" "$formatted_date"
+        fi
+    done
+
+    echo ""
+    echo "  Full changelog: ./update_version.sh --notes <version>"
+    echo ""
 }
 
 list_local() {
