@@ -149,6 +149,35 @@ Single source of truth: `versions/active` file (plain text with the Docker tag).
 5. `run_vllm_server.sh` captures this, saves to `.env` as `MODEL_NAME`
 6. Container sees model at `/app/models/org/model/`
 
+## Bug Fixes (2026-05-05)
+
+### Critical
+- **docker-compose.yml**: Removed `CUDA_VISIBLE_DEVICES` from `environment:` — empty string was hiding all GPUs; now controlled only via `gpu.env`
+- **docker-compose.yml + .env.example**: Changed `~` to `$HOME` in `HF_CACHE_DIR` — Docker Compose does not expand tilde, causing a literal `~` directory to be created
+- **download_model.py**: `--bg` background mode was not passing `--all` to child process, so downloads silently listed files and exited
+- **download_model.py**: 3-tuple `(path, size, is_weight)` unpacked as 2-tuple in 3 places (`ValueError` crash)
+
+### Security
+- **manage_models.sh**: Changed `grep -i` to `grep -iF` (fixed-string matching) — regex patterns like `.` in `delete` command could match unintended models
+- **manage_models.sh**: Fixed Python code injection via model paths containing single quotes (now uses `sys.argv`)
+- **manage_models.sh**: Added validation before `rm -rf` (checks path is non-empty and directory exists)
+- **download_model.py**: Used `shlex.quote()` to prevent shell injection in tmux/nohup background download commands
+
+### Correctness
+- **bench_vllm.sh**: Rewrote `bench_generate()` — original had dead variables, broken timing (`created * 1000` is epoch not duration), and ignored `BENCH_REPS`; now uses wall-clock timing across all reps
+- **bench_vllm.sh**: Fixed prompt generation `'x ' * N` → `'x' * N` so labeled token count matches actual tokens
+- **manage_models.sh**: Removed `local` keyword used outside functions (bash error)
+- **entrypoint.sh**: Replaced `read -ra` with line-by-line `eval` to correctly handle `vllm.args` values containing spaces
+
+### Robustness
+- **lib.sh**: Added `\|` to sed escape for `|` delimiter used in `set_env_var`
+- **lib.sh**: Strip trailing `/` from `model_dir` in `enumerate_models` to prevent path computation errors
+- **run_vllm_server.sh + select_model.sh**: Changed `${2:-}` to `${2:?error msg}` to prevent `shift 2` crash when option has no value
+- **run_vllm_server.sh + stop_vllm_server.sh**: `.env.*` glob now requires numeric port (`^[0-9]+$`), skipping `.env.example`, vim swaps, etc.
+- **stop_vllm_server.sh**: Removed unnecessary `--env-file` from `docker compose down` — only project name is needed for stop
+- **download_model.py**: Added `except HttpErr` catch in `download_model()` — network errors now show friendly message instead of raw traceback
+- **download_model.sh**: Added friendly error message when `python3` is not installed
+
 ## Differences from the llama.cpp Stack
 
 | Aspect | llama.cpp stack | vLLM stack |

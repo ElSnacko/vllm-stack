@@ -84,7 +84,7 @@ set_env_var() {
     local env_file="${3:-.env}"
 
     local escaped_value
-    escaped_value=$(printf '%s\n' "$value" | sed 's/[&/\]/\\&/g')
+    escaped_value=$(printf '%s\n' "$value" | sed 's/[&/\\|]/\\&/g')
     if grep -q "^${key}=" "$env_file"; then
         sed -i "s|^${key}=.*|${key}=${escaped_value}|" "$env_file"
     else
@@ -116,6 +116,7 @@ source_env_files() {
 
 enumerate_models() {
     local model_dir="${1:-./llm_models/hf}"
+    model_dir="${model_dir%/}"
     if [ ! -d "$model_dir" ]; then
         return 1
     fi

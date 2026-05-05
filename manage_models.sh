@@ -56,7 +56,7 @@ if [ "$MODE" = "list" ]; then
     echo "  $(printf '%0.s-' {1..90})"
 
     while IFS='|' read -r size rel model_type is_valid file_count; do
-        local status="OK"
+        status="OK"
         [ "$is_valid" = "false" ] && status="INCOMPLETE"
         printf "  %-55s %10s  %-12s %s\n" "$rel" "$(format_size "$size")" "$model_type" "$status"
     done <<< "$LINES"
@@ -72,7 +72,7 @@ if [ "$MODE" = "info" ]; then
         exit 1
     fi
 
-    local_lines=$(echo "$LINES" | grep -i "$TARGET" || true)
+    local_lines=$(echo "$LINES" | grep -iF "$TARGET" || true)
     if [ -z "$local_lines" ]; then
         echo "No models matching '${TARGET}'"
         exit 1
@@ -86,16 +86,15 @@ if [ "$MODE" = "info" ]; then
         echo "  Files:   ${file_count}"
         echo "  Status:  $([ "$is_valid" = "true" ] && echo "complete" || echo "incomplete")"
 
-        local model_path="${MODEL_DIR}/${rel}"
+        model_path="${MODEL_DIR}/${rel}"
         if [ -f "${model_path}/config.json" ]; then
-            local arch
-            arch=$(python3 -c "
+            arch=$(python3 -c '
 import json, sys
 try:
-    c = json.load(open('${model_path}/config.json'))
-    print(c.get('model_type', c.get('architectures', ['unknown'])[0] if 'architectures' in c else 'unknown'))
-except: print('unknown')
-" 2>/dev/null || echo "unknown")
+    c = json.load(open(sys.argv[1]))
+    print(c.get("model_type", c.get("architectures", ["unknown"])[0] if "architectures" in c else "unknown"))
+except: print("unknown")
+' "${model_path}/config.json" 2>/dev/null || echo "unknown")
             echo "  Arch:    ${arch}"
         fi
         echo ""
@@ -108,7 +107,7 @@ if [ "$MODE" = "delete" ]; then
         exit 1
     fi
 
-    local_lines=$(echo "$LINES" | grep -i "$TARGET" || true)
+    local_lines=$(echo "$LINES" | grep -iF "$TARGET" || true)
     if [ -z "$local_lines" ]; then
         echo "No models matching '${TARGET}'"
         exit 1
@@ -129,6 +128,8 @@ if [ "$MODE" = "delete" ]; then
     fi
 
     while IFS='|' read -r size rel model_type is_valid file_count; do
+        [ -z "$rel" ] && continue
+        [ -d "${MODEL_DIR}/${rel}" ] || continue
         echo "Removing: ${rel}"
         rm -rf "${MODEL_DIR}/${rel}"
     done <<< "$local_lines"

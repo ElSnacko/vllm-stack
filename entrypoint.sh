@@ -32,18 +32,17 @@ fi
 
 ARGS_FILE_ARGS=""
 if [ -f "/app/vllm.args" ]; then
-    ARGS_FILE_ARGS=$(sed '/^#/d; /^[[:space:]]*$/d; s/[[:space:]]*$//' /app/vllm.args | tr '\n' ' ')
+    ARGS_FILE_ARGS=$(sed '/^#/d; /^[[:space:]]*$/d; s/[[:space:]]*$//' /app/vllm.args)
 fi
 
-if [ -n "${ARGS_FILE_ARGS}" ]; then
-    read -ra EXTRA <<< "${ARGS_FILE_ARGS}"
-    ARGS+=("${EXTRA[@]}")
-fi
+while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    eval 'ARGS+=('$line')'
+done <<< "${ARGS_FILE_ARGS}"
 
 EXTRA_ARGS="${EXTRA_ARGS:-}"
 if [ -n "$EXTRA_ARGS" ]; then
-    read -ra EXTRA <<< "$EXTRA_ARGS"
-    ARGS+=("${EXTRA[@]}")
+    eval 'ARGS+=('$EXTRA_ARGS')'
 fi
 
 echo "========================================"

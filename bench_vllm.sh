@@ -91,7 +91,7 @@ TMP_RESULTS=$(mktemp /tmp/vllm-bench-XXXXXX.txt)
 
 bench_prompt() {
     local num_tokens="$1"
-    local prompt=$(python3 -c "print('x ' * $num_tokens)" 2>/dev/null || echo "")
+    local prompt=$(python3 -c "print('x' * $num_tokens)" 2>/dev/null || echo "")
     [ -z "$prompt" ] && return
 
     echo -n "  PP ${num_tokens}: "
@@ -125,45 +125,32 @@ bench_generate() {
 
     echo -n "  TG ${num_tokens}: "
 
-    local total_time=0
-    local total_generated=0
+    local total_ms=0
+    local total_tokens=0
     for ((rep=1; rep<=BENCH_REPS; rep++)); do
+        local start_ns end_ns elapsed_ms
+        start_ns=$(date +%s%N)
+
         local response
         response=$(curl -sf "${API_BASE}/v1/completions" \
             -H "Content-Type: application/json" \
-            -d "{\"model\": \"${MODEL_ID}\", \"prompt\": \"${prompt}\", \"max_tokens\": ${num_tokens}, \"temperature\": 0}" \
+            -d "{\"model\": \"${MODEL_ID}\", \"prompt\": \"${prompt}\", \"max_tokens\": ${num_tokens}, \"temperature\": 0, \"stream\": false}" \
             2>/dev/null || echo "{}")
 
-        local usage
-        usage=$(echo "$response" | jq -r '.usage.completion_tokens // 0' 2>/dev/null || echo 0)
-        total_generated=$((total_generated + usage))
+        end_ns=$(date +%s%N)
+        elapsed_ms=$(( (end_ns - start_ns) / 1000000 ))
 
-        local start_time
-        start_time=$(echo "$response" | jq -r '.created // 0' 2>/dev/null || echo 0)
-        local end_time
-        end_time=$(date +%s)
+        local tokens
+        tokens=$(echo "$response" | jq -r '.usage.completion_tokens // 0' 2>/dev/null || echo 0)
+        total_ms=$((total_ms + elapsed_ms))
+        total_tokens=$((total_tokens + tokens))
     done
 
-    local single_prompt="x"
-    local response
-    response=$(curl -sf "${API_BASE}/v1/completions" \
-        -H "Content-Type: application/json" \
-        -d "{\"model\": \"${MODEL_ID}\", \"prompt\": \"${single_prompt}\", \"max_tokens\": ${num_tokens}, \"temperature\": 0, \"stream\": false}" \
-        2>/dev/null || echo "{}")
-
-    local completion_tokens total_time_ms
-    completion_tokens=$(echo "$response" | jq -r '.usage.completion_tokens // 0' 2>/dev/null || echo 0)
-    total_time_ms=$(echo "$response" | jq -r '.usage.total_time // 0' 2>/dev/null || echo 0)
-
-    if [ "$total_time_ms" = "0" ] || [ "$total_time_ms" = "null" ]; then
-        total_time_ms=$(echo "$response" | jq -r '(.created // 0) * 1000' 2>/dev/null || echo 0)
-    fi
-
-    if [ "$completion_tokens" -gt 0 ] 2>/dev/null; then
+    if [ "$total_tokens" -gt 0 ] 2>/dev/null; then
         local tps
-        tps=$(awk -v t="$completion_tokens" -v ms="$total_time_ms" 'BEGIN {printf "%.1f", t / (ms/1000)}')
-        echo "${tps} t/s  (${completion_tokens} tokens in ${total_time_ms} ms)"
-        echo "TG ${num_tokens}|${tps}|${total_time_ms}" >> "$TMP_RESULTS"
+        tps=$(awk -v t="$total_tokens" -v ms="$total_ms" 'BEGIN {printf "%.1f", t / (ms/1000)}')
+        echo "${tps} t/s  (${total_tokens} tokens in ${total_ms} ms, ${BENCH_REPS} reps)"
+        echo "TG ${num_tokens}|${tps}|${total_ms}" >> "$TMP_RESULTS"
     else
         echo "no data"
     fi

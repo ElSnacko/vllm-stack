@@ -11,7 +11,7 @@ Usage:
     ./download_model.py --attach [session]              reattach to background download
 """
 
-import sys, os, re, shutil, argparse, subprocess
+import sys, os, re, shutil, argparse, subprocess, shlex
 from pathlib import Path
 from datetime import datetime
 
@@ -151,9 +151,9 @@ def _spawn_tmux_download(model_id: str):
     workdir = Path(__file__).parent.resolve()
 
     inner_cmd = (
-        f'cd "{workdir}" && '
-        f'PYTHONUNBUFFERED=1 python3 -u "{script_path}" --_exec-download "{model_id}" '
-        f'2>&1 | tee "{log}"'
+        f'cd {shlex.quote(str(workdir))} && '
+        f'PYTHONUNBUFFERED=1 python3 -u {shlex.quote(str(script_path))} --_exec-download --all {shlex.quote(model_id)} '
+        f'2>&1 | tee {shlex.quote(str(log))}'
     )
 
     print(f"Starting download in tmux session: {green(session)}")
@@ -188,7 +188,7 @@ def _spawn_nohup_download(model_id: str):
     script_path = Path(__file__).resolve()
     workdir = Path(__file__).parent.resolve()
 
-    cmd = f'cd "{workdir}" && PYTHONUNBUFFERED=1 python3 -u "{script_path}" --_exec-download "{model_id}" > "{log}" 2>&1 &'
+    cmd = f'cd {shlex.quote(str(workdir))} && PYTHONUNBUFFERED=1 python3 -u {shlex.quote(str(script_path))} --_exec-download --all {shlex.quote(model_id)} > {shlex.quote(str(log))} 2>&1 &'
 
     print(f"Starting download with nohup (tmux not available).")
     print(f"Log file: {log}")
@@ -342,7 +342,7 @@ def download_model(hf, repo_id: str, token) -> Path:
     weights = [(p, s) for p, s, w in files if w]
     configs = [(p, s) for p, s, w in files if not w]
 
-    total_size = sum(s for _, s in files)
+    total_size = sum(s for _, s, _ in files)
     print(f"\nDownloading {green(repo_id)}  ({len(weights)} weight files, {len(configs)} config files, {format_size(total_size)})\n")
 
     free = shutil.disk_usage(out_dir).free
@@ -350,7 +350,7 @@ def download_model(hf, repo_id: str, token) -> Path:
         die(f"Not enough disk space — need {format_size(total_size)}, have {format_size(free)} free")
 
     try:
-        for fpath, fsize in files:
+        for fpath, fsize, _ in files:
             print(f"  {green('↓')} {fpath}  ({format_size(fsize)})")
 
         hf.snapshot_download(
@@ -365,6 +365,8 @@ def download_model(hf, repo_id: str, token) -> Path:
 
     except Gated:
         die(f"Access denied. Accept the license at https://huggingface.co/{repo_id}")
+    except HttpErr as e:
+        die(f"Download failed: {e}")
     except KeyboardInterrupt:
         print(f"\n{yellow('Interrupted.')} Partial files kept; re-run to resume.")
         sys.exit(0)
@@ -451,7 +453,7 @@ examples:
 
     weights = [(p, s) for p, s, w in files if w]
     configs = [(p, s) for p, s, w in files if not w]
-    total = sum(s for _, s in files)
+    total = sum(s for _, s, _ in files)
 
     if args.list or not args.all:
         print(f"\nAvailable files for {green(model_id)}:\n")

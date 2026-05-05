@@ -43,14 +43,14 @@ show_help() {
 while [[ $# -gt 0 ]]; do
     case $1 in
         --model|-m)         FORCE_MODEL_SELECT=true; shift ;;
-        --port|-p)          CLI_PORT="${2:-}"; shift 2 ;;
-        --context|-c)       CLI_CONTEXT="${2:-}"; shift 2 ;;
-        --gpu-util)         CLI_GPU_UTIL="${2:-}"; shift 2 ;;
-        --dtype)            CLI_DTYPE="${2:-}"; shift 2 ;;
-        --tp)               CLI_TP="${2:-}"; shift 2 ;;
+        --port|-p)          CLI_PORT="${2:?--port requires a value}"; shift 2 ;;
+        --context|-c)       CLI_CONTEXT="${2:?--context requires a value}"; shift 2 ;;
+        --gpu-util)         CLI_GPU_UTIL="${2:?--gpu-util requires a value}"; shift 2 ;;
+        --dtype)            CLI_DTYPE="${2:?--dtype requires a value}"; shift 2 ;;
+        --tp)               CLI_TP="${2:?--tp requires a value}"; shift 2 ;;
         --rebuild)          REBUILD_FLAG="--build"; shift ;;
         --status)           MODE="status"; shift ;;
-        --wait)             WAIT_TIMEOUT="${2:-300}"; shift 2 ;;
+        --wait)             WAIT_TIMEOUT="${2:?--wait requires a value}"; shift 2 ;;
         --help|-h)          show_help; exit 0 ;;
         *)                  echo "Unknown option: $1. Use --help for usage."; exit 1 ;;
     esac
@@ -178,6 +178,7 @@ if [ "$MODE" = "status" ]; then
         for env_file in .env.*; do
             [ -f "$env_file" ] || continue
             local_port="${env_file#.env.}"
+            [[ "$local_port" =~ ^[0-9]+$ ]] || continue
             echo ""
             echo "  [:${local_port}]"
             show_instance_status "$local_port" "$env_file"

@@ -41,7 +41,7 @@ stop_instance() {
         return 1
     fi
 
-    docker compose -p "$project" --env-file "$env_file" down 2>/dev/null
+    docker compose -p "$project" down 2>/dev/null
     echo "vllm-server :${port} stopped."
     return 0
 }
@@ -58,6 +58,7 @@ if [ "$STOP_ALL" = true ]; then
     for env_file in .env.*; do
         [ -f "$env_file" ] || continue
         port="${env_file#.env.}"
+        [[ "$port" =~ ^[0-9]+$ ]] || continue
         stop_instance "$port" && FOUND=1 || true
     done
     if [ "$FOUND" -eq 0 ]; then

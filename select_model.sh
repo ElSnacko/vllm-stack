@@ -12,7 +12,7 @@ SELECT_NUM=""
 while [[ $# -gt 0 ]]; do
     case $1 in
         --list|-l)    MODE="list"; shift ;;
-        --select|-s)  MODE="select"; SELECT_NUM="${2:-}"; shift 2 ;;
+        --select|-s)  MODE="select"; SELECT_NUM="${2:?--select requires a number}"; shift 2 ;;
         --help|-h)
             echo "Usage: $0 [OPTIONS]"
             echo ""
