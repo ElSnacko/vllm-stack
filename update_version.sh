@@ -50,7 +50,21 @@ fetch_tags() {
         return 1
     fi
 
-    echo "$response" | jq -r '.results[] | [.name, .full_size, .last_updated] | @json' 2>/dev/null || echo ""
+    echo "$response" | jq -r '.results[] | [.name, .full_size, .last_updated] | @json' 2>/dev/null \
+        | sort -t'"' -k2 | {
+        local ordered=""
+        local rest=""
+        while IFS= read -r line; do
+            local tag
+            tag=$(echo "$line" | jq -r '.[0]')
+            if [[ "$tag" != *"-x86_64"* && "$tag" != *"-aarch64"* && "$tag" != *"-cu129"* && "$tag" != *"-ubuntu"* && "$tag" != *"-nightly"* ]]; then
+                ordered+="${line}"$'\n'
+            else
+                rest+="${line}"$'\n'
+            fi
+        done
+        printf '%s%s' "$ordered" "$rest"
+    }
 }
 
 list_tags() {
