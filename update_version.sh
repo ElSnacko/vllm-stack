@@ -57,7 +57,7 @@ fetch_tags() {
         while IFS= read -r line; do
             local tag
             tag=$(echo "$line" | jq -r '.[0]')
-            if [[ "$tag" != *"-x86_64"* && "$tag" != *"-aarch64"* && "$tag" != *"-cu129"* && "$tag" != *"-ubuntu"* && "$tag" != *"-nightly"* ]]; then
+            if [[ "$tag" =~ ^v[0-9] ]]; then
                 ordered+="${line}"$'\n'
             else
                 rest+="${line}"$'\n'
