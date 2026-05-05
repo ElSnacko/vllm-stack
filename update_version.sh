@@ -115,6 +115,12 @@ list_tags() {
     done <<< "$tags"
 
     echo ""
+
+    local latest_version
+    latest_version=$(echo "$tags" | head -1 | jq -r '.[0]' 2>/dev/null)
+    if [[ "$latest_version" =~ ^v[0-9] ]]; then
+        show_release_info "$latest_version"
+    fi
 }
 
 list_local() {
