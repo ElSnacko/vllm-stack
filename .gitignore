@@ -1,0 +1,54 @@
+# Large model files
+llm_models/
+*.safetensors
+*.bin
+*.pt
+*.onnx
+*.gguf
+
+# Download logs
+llm_models/.download_logs/
+
+# Version tracking (contains user-specific version)
+versions/active
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+.Python
+*.egg-info/
+
+# Temporary files
+*.log
+*.tmp
+*.swp
+*~
+.DS_Store
+*.pid
+
+# Sensitive/local configuration
+.huggingface/config
+*.token
+.env
+.env.local
+.env.[0-9]*
+gpu.env
+vllm.args
+
+# Docker
+*.tar
+*.tar.gz
+
+# IDE
+.vscode/
+.idea/
+*.sublime-*
+
+# OS
+Thumbs.db
+
+# Test files
+test_*.sh
+versions/active

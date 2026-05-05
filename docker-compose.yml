@@ -1,0 +1,56 @@
+services:
+  vllm-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VLLM_VERSION: "${VLLM_VERSION:-latest}"
+    image: vllm-server:latest
+    restart: unless-stopped
+    ports:
+      - "${HOST_PORT:-8080}:${PORT:-8080}"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    volumes:
+      - ${MODEL_DIR:-./llm_models/hf}:/app/models:z
+      - ./vllm.args:/app/vllm.args:ro
+      - ${HF_CACHE_DIR:-~/.cache/huggingface}:/root/.cache/huggingface
+    env_file:
+      - path: gpu.env
+        required: false
+    environment:
+      - MODEL_NAME=${MODEL_NAME}
+      - MAX_MODEL_LEN=${MAX_MODEL_LEN:-8192}
+      - GPU_MEMORY_UTILIZATION=${GPU_MEMORY_UTILIZATION:-0.95}
+      - TENSOR_PARALLEL_SIZE=${TENSOR_PARALLEL_SIZE:-1}
+      - DTYPE=${DTYPE:-auto}
+      - HOST=0.0.0.0
+      - PORT=${PORT:-8080}
+      - EXTRA_ARGS=${EXTRA_ARGS:-}
+      - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-}
+      - VLLM_WORKER_MULTIPROC_METHOD=${VLLM_WORKER_MULTIPROC_METHOD:-spawn}
+      - VLLM_USE_V1=${VLLM_USE_V1:-1}
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    shm_size: ${SHM_SIZE:-4g}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${PORT:-8080}/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 300s
+      retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: "100m"
+        max-file: "3"

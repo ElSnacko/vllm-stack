@@ -1,0 +1,12 @@
+# vLLM server extra arguments
+# One argument per line. Lines starting with # are comments.
+# Blank lines are ignored.
+#
+# Examples:
+# --enable-prefix-caching
+# --enable-chunked-prefill
+# --max-num-seqs 256
+# --swap-space 4
+# --disable-log-requests
+# --quantization fp8
+# --kv-cache-dtype fp8
