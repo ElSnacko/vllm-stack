@@ -78,19 +78,21 @@ is ~1.74× slower on Blackwell according to benchmarks.
 This headroom allows for 256K context if needed (`MAX_MODEL_LEN=262144`), which
 would add ~8.6 GB of KV cache and still fit.
 
-## Switching models
+## Why sakamakismile beats unsloth on Blackwell
 
-```bash
-# Switch to unsloth (once downloaded — check status with ./download_model.py --status)
-# 1. Edit .env: MODEL_NAME=unsloth/Qwen3.6-27B-NVFP4
-# 2. Comment out --speculative-config in vllm.args (unconfirmed MTP support)
-# 3. Restart: ./run_vllm_server.sh
+Both models were tested. The unsloth/Qwen3.6-27B-NVFP4 model **does** have MTP tensors
+(vLLM detects `Qwen3_5MTP` architecture), but uses `compressed-tensors` quantization
+format instead of `modelopt`. On Blackwell (sm_120):
 
-# Switch back to sakamakismile
-# 1. Edit .env: MODEL_NAME=sakamakismile/Qwen3.6-27B-Text-NVFP4-MTP
-# 2. Uncomment --speculative-config in vllm.args
-# 3. Restart: ./run_vllm_server.sh
-```
+| | sakamakismile (modelopt) | unsloth (compressed-tensors) |
+|---|---|---|
+| Kernel path | Native Blackwell FP4 MACs | Software fallback |
+| Throughput | baseline | ~1.74× slower |
+| VRAM overhead | ~28.2 GB at 128K | ~30.4 GB (OOM on 32 GB at 128K) |
+| Fits 32 GB + 128K | ✓ | ✗ |
+
+The `--quantization modelopt` flag in vllm.args is what enables the native fast path.
+unsloth would require reducing context to ~64K to fit — not worth the speed penalty.
 
 ## Why not llama.cpp anymore (for this GPU)
 
