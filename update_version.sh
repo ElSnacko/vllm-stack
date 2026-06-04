@@ -13,6 +13,18 @@ success() { log_success "$1"; }
 VLLM_DOCKER_REPO="vllm/vllm-openai"
 DOCKER_HUB_API="https://hub.docker.com/v2/repositories/vllm/vllm-openai/tags"
 
+detect_arch() {
+    local arch
+    arch=$(uname -m 2>/dev/null || echo "x86_64")
+    case "$arch" in
+        x86_64|amd64)  echo "x86_64" ;;
+        aarch64|arm64) echo "aarch64" ;;
+        *)             echo "$arch" ;;
+    esac
+}
+
+SYSTEM_ARCH=$(detect_arch)
+
 show_help() {
     cat << EOF
 Pull vLLM Docker images from Docker Hub
@@ -22,6 +34,7 @@ Usage:
     $0 --latest                           Pull latest image
     $0 --version <tag>                    Pull specific version (e.g. v0.8.5)
     $0 --list                             List available tags from Docker Hub
+    $0 --list --nightly                   Include nightly builds in listing
     $0 --list-local                       List locally pulled images
     $0 --cleanup                          Remove old local images
     $0 --notes <version>                  Show release info from GitHub
@@ -32,6 +45,7 @@ Examples:
     $0 --version v0.8.5                   Pull specific version
     $0 --version latest                   Pull latest tag explicitly
     $0 --list                             Browse available versions
+    $0 --list --nightly                   Browse versions including nightlies
 
 Note: After pulling, switch to the new version:
     ./switch_version.sh <tag>
@@ -40,7 +54,8 @@ EOF
 }
 
 fetch_tags() {
-    local page_size="${1:-100}"
+    local include_nightly="${1:-false}"
+    local page_size=100
     local url="${DOCKER_HUB_API}?page_size=${page_size}&ordering=last_updated"
 
     local response
@@ -50,13 +65,49 @@ fetch_tags() {
         return 1
     fi
 
+    local other_arch=""
+    case "$SYSTEM_ARCH" in
+        x86_64)  other_arch="aarch64|arm64" ;;
+        aarch64) other_arch="x86_64" ;;
+    esac
+
     echo "$response" | jq -r '.results[] | [.name, .full_size, .last_updated] | @json' 2>/dev/null \
-        | sort -t'"' -k2 | {
+        | {
         local ordered=""
         local rest=""
         while IFS= read -r line; do
+            [ -z "$line" ] && continue
             local tag
             tag=$(echo "$line" | jq -r '.[0]')
+
+            if [[ "$tag" =~ nightly ]] && [ "$include_nightly" != "true" ]; then
+                continue
+            fi
+
+            if [[ -n "$other_arch" ]] && [[ "$tag" =~ -(${other_arch})(-|$) ]]; then
+                continue
+            fi
+
+            if [[ "$tag" =~ -(x86_64|aarch64|arm64)(-|$) ]] && [[ ! "$tag" =~ -${SYSTEM_ARCH}(-|$) ]]; then
+                continue
+            fi
+
+            if [[ "$tag" =~ -(x86_64|aarch64|arm64) ]]; then
+                continue
+            fi
+
+            if [[ "$tag" =~ ^laguna ]] || [[ "$tag" =~ ^mimov ]]; then
+                continue
+            fi
+
+            if [[ "$tag" =~ ^latest ]]; then
+                continue
+            fi
+
+            if [[ "$tag" =~ nightly ]] && [[ "$tag" =~ -[0-9a-f]{20,} ]]; then
+                continue
+            fi
+
             if [[ "$tag" =~ ^v[0-9] ]]; then
                 ordered+="${line}"$'\n'
             else
@@ -67,9 +118,26 @@ fetch_tags() {
     }
 }
 
-list_tags() {
+resolve_latest() {
     local tags
-    tags=$(fetch_tags)
+    tags=$(fetch_tags "false")
+    local latest_tag
+    latest_tag=$(echo "$tags" | while IFS= read -r line; do
+        [ -z "$line" ] && continue
+        local tag
+        tag=$(echo "$line" | jq -r '.[0]')
+        if [[ "$tag" =~ ^v[0-9]+(\.[0-9]+)*$ ]]; then
+            echo "$tag"
+            break
+        fi
+    done)
+    echo "$latest_tag"
+}
+
+list_tags() {
+    local include_nightly="${1:-false}"
+    local tags
+    tags=$(fetch_tags "$include_nightly")
 
     if [ -z "$tags" ]; then
         error "No tags found"
@@ -267,6 +335,7 @@ main() {
 
     local mode="interactive"
     local target_tag=""
+    local include_nightly="false"
 
     while [[ $# -gt 0 ]]; do
         case $1 in
@@ -275,6 +344,7 @@ main() {
             --version)    mode="version"; target_tag="$2"; shift 2 ;;
             --list)       mode="list"; shift ;;
             --list-local) mode="list-local"; shift ;;
+            --nightly)    include_nightly="true"; shift ;;
             --cleanup)    mode="cleanup"; shift ;;
             --notes)      mode="notes"; target_tag="${2:-}"; shift; [ -n "$target_tag" ] && shift ;;
             *)            error "Unknown option: $1. Use --help for usage." ;;
@@ -295,13 +365,19 @@ main() {
             show_release_info "$target_tag"
             ;;
         list)
-            list_tags
+            list_tags "$include_nightly"
             ;;
         latest)
-            pull_image "latest"
+            local resolved
+            resolved=$(resolve_latest)
+            if [ -z "$resolved" ]; then
+                error "Could not determine latest version"
+            fi
+            info "Latest version: ${resolved}"
+            pull_image "$resolved"
             echo ""
             echo "Switch to it:"
-            echo "  ./switch_version.sh latest"
+            echo "  ./switch_version.sh $resolved"
             ;;
         version)
             pull_image "$target_tag"
@@ -319,7 +395,7 @@ main() {
             fi
             ;;
         interactive)
-            list_tags
+            list_tags "$include_nightly"
 
             read -p "Select tag to pull (or 'q' to quit): " selection
             if [[ "$selection" =~ ^[Qq]$ ]] || [ -z "$selection" ]; then
@@ -328,7 +404,7 @@ main() {
 
             if [[ "$selection" =~ ^[0-9]+$ ]]; then
                 local tags
-                tags=$(fetch_tags)
+                tags=$(fetch_tags "$include_nightly")
                 local tag
                 tag=$(echo "$tags" | sed -n "${selection}p" | jq -r '.[0]')
                 if [ -z "$tag" ]; then

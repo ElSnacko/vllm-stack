@@ -113,9 +113,40 @@ Single source of truth: `versions/active` file (plain text with the Docker tag).
 
 - **32 GB VRAM** — can fit most 30B-parameter models at BF16, or 70B at FP8/AWQ
 - **Blackwell SM 12.0** — supports FP8 natively; use `--dtype float8` or `--kv-cache-dtype fp8` for max throughput
-- **VLLM_USE_V1=1** — enable the V1 engine for better scheduling
+- **VLLM_USE_V1=1** — removed in vLLM v0.20.1; no longer needed
 - **GPU_MEMORY_UTILIZATION=0.95** — leave 5% headroom for CUDA overhead; adjust down if OOMs
 - **Tensor parallelism** — single GPU, so `TENSOR_PARALLEL_SIZE=1`; not applicable unless multi-GPU
+
+### Memory Layout for Qwen3.6-27B-Text-NVFP4-MTP
+
+This 27B NVFP4-quantized model has unique constraints on the RTX 5090's 32 GB VRAM:
+
+| Component | Memory |
+|---|---|
+| Model weights (NVFP4) | 17.76 GiB |
+| torch.compile artifacts | +12.47 GiB |
+| **Total with compile** | **30.23 GiB** |
+| CUDA graph profiling overhead | +1.53 GiB |
+| **Total needed for CUDA graphs** | **31.76 GiB > 31.36 GiB** |
+
+torch.compile consumes 12.47 GiB on top of model weights, leaving only ~1.13 GiB free. CUDA graph profiling needs 1.53 GiB, so it OOMs regardless of context length — even at 8K tokens.
+
+**Working configuration** (`ENFORCE_EAGER=1`, `KV_CACHE_DTYPE=fp8`):
+
+| Component | Memory |
+|---|---|
+| Model weights | 17.76 GiB |
+| Available KV cache (fp8) | 10.8 GiB |
+| Max context length | 174,048 tokens |
+| Generation throughput | ~23 tokens/s |
+
+The enforce-eager flag disables both torch.compile and CUDA graphs, freeing the 12+ GiB compile overhead for KV cache. The fp8 KV cache doubles effective cache capacity vs bf16. The `--language-model-only` and `--runner generate` flags are auto-applied by `entrypoint.sh` for text-only models that use a multimodal architecture name (e.g., `Qwen3_5ForConditionalGeneration` without a `preprocessor_config.json`).
+
+### Text-Only Models with Multimodal Architecture Names
+
+Some quantized models (like the NVFP4 variant of Qwen3.6) ship with `architectures: ["Qwen3_5ForConditionalGeneration"]` in `config.json` but lack `preprocessor_config.json`, making them text-only. vLLM's model registry maps this architecture to the multimodal `qwen3_vl` handler, which fails trying to load an image processor.
+
+The `entrypoint.sh` auto-detects this case: if `config.json` contains `ConditionalGeneration` but `preprocessor_config.json` is absent, it passes `--runner generate` and `--language-model-only` to vLLM. The `--chat-template` flag is also needed because the NVFP4 quantization strips the `chat_template` field from `tokenizer_config.json` (ChatML format is used for Qwen3 models).
 
 ## Development Commands
 
@@ -150,6 +181,20 @@ Single source of truth: `versions/active` file (plain text with the Docker tag).
 6. Container sees model at `/app/models/org/model/`
 
 ## Bug Fixes (2026-05-05)
+
+### vLLM v0.20.1 Upgrade & Model Compatibility
+- **run_vllm_server.sh**: Moved `export VLLM_VERSION="$ACTIVE_VERSION"` before build commands — previously only set during `--rebuild`, causing builds to default to `latest` tag instead of the active version (e.g., `v0.20.1-cu129-ubuntu2404`)
+- **run_vllm_server.sh**: Added `--pull` to `docker compose build` to refresh stale base images
+- **run_vllm_server.sh**: Added auto-build when `vllm-server:latest` image doesn't exist yet
+- **docker-compose.yml**: Removed `VLLM_USE_V1` env var — deprecated/removed in vLLM v0.20.1, caused startup warning
+- **entrypoint.sh**: Auto-detect text-only models with multimodal architecture names — passes `--runner generate` and `--language-model-only` when `config.json` has `ConditionalGeneration` but no `preprocessor_config.json`
+- **entrypoint.sh**: Added `--chat-template` support — NVFP4 quantization strips `chat_template` from `tokenizer_config.json`; ChatML template path auto-configured via `CHAT_TEMPLATE` env var
+- **entrypoint.sh**: Added `--trust-request-chat-template` support via `TRUST_CHAT_TEMPLATE` env var
+- **entrypoint.sh**: Added `--kv-cache-dtype` support via `KV_CACHE_DTYPE` env var
+- **entrypoint.sh**: Added `--enforce-eager` support via `ENFORCE_EAGER` env var
+- **entrypoint.sh**: Added `--compilation-config` support via `COMPILATION_CONFIG` env var
+- **docker-compose.yml**: Added `ENFORCE_EAGER`, `KV_CACHE_DTYPE`, `COMPILATION_CONFIG`, `CHAT_TEMPLATE`, `TRUST_CHAT_TEMPLATE` env passthrough
+- **.env**: Set `MAX_MODEL_LEN=174048` (max that fits 32GB VRAM with fp8 KV cache), `KV_CACHE_DTYPE=fp8`, `ENFORCE_EAGER=1`
 
 ### Critical
 - **docker-compose.yml**: Removed `CUDA_VISIBLE_DEVICES` from `environment:` — empty string was hiding all GPUs; now controlled only via `gpu.env`

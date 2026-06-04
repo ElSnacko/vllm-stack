@@ -30,6 +30,46 @@ if [ "$DTYPE" != "auto" ]; then
     ARGS+=("--dtype" "${DTYPE}")
 fi
 
+TASK="${TASK:-}"
+LANGUAGE_MODEL_ONLY="${LANGUAGE_MODEL_ONLY:-}"
+if [ -z "$TASK" ] && [ -f "${MODEL_DIR}/config.json" ]; then
+    if ! [ -f "${MODEL_DIR}/preprocessor_config.json" ] && grep -q "ConditionalGeneration" "${MODEL_DIR}/config.json" 2>/dev/null; then
+        TASK="generate"
+        LANGUAGE_MODEL_ONLY="1"
+    fi
+fi
+if [ -n "$TASK" ]; then
+    ARGS+=("--runner" "${TASK}")
+fi
+if [ "$LANGUAGE_MODEL_ONLY" = "1" ]; then
+    ARGS+=("--language-model-only")
+fi
+
+TRUST_CHAT_TEMPLATE="${TRUST_CHAT_TEMPLATE:-}"
+if [ "$TRUST_CHAT_TEMPLATE" = "1" ]; then
+    ARGS+=("--trust-request-chat-template")
+fi
+
+CHAT_TEMPLATE="${CHAT_TEMPLATE:-}"
+if [ -n "$CHAT_TEMPLATE" ]; then
+    ARGS+=("--chat-template" "$CHAT_TEMPLATE")
+fi
+
+KV_CACHE_DTYPE="${KV_CACHE_DTYPE:-auto}"
+if [ "$KV_CACHE_DTYPE" != "auto" ]; then
+    ARGS+=("--kv-cache-dtype" "${KV_CACHE_DTYPE}")
+fi
+
+COMPILATION_CONFIG="${COMPILATION_CONFIG:-}"
+if [ -n "$COMPILATION_CONFIG" ]; then
+    ARGS+=("--compilation-config" "$COMPILATION_CONFIG")
+fi
+
+ENFORCE_EAGER="${ENFORCE_EAGER:-}"
+if [ "$ENFORCE_EAGER" = "1" ]; then
+    ARGS+=("--enforce-eager")
+fi
+
 ARGS_FILE_ARGS=""
 if [ -f "/app/vllm.args" ]; then
     ARGS_FILE_ARGS=$(sed '/^#/d; /^[[:space:]]*$/d; s/[[:space:]]*$//' /app/vllm.args)

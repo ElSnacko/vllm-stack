@@ -198,9 +198,15 @@ if [ -z "${MODEL_NAME:-}" ] || [ "$FORCE_MODEL_SELECT" = true ]; then
     set -a; source "$INSTANCE_ENV"; set +a
 fi
 
+export VLLM_VERSION="$ACTIVE_VERSION"
+
 if [ -n "$REBUILD_FLAG" ]; then
-    export VLLM_VERSION="$ACTIVE_VERSION"
-    docker compose build vllm-server 2>&1 | tail -5
+    docker compose build --pull vllm-server 2>&1 | tail -5
+fi
+
+if ! docker image inspect vllm-server:latest &>/dev/null; then
+    echo "Building vllm-server image (first run or image missing)..."
+    docker compose build --pull vllm-server 2>&1 | tail -5
 fi
 
 if dc ps -q vllm-server 2>/dev/null | grep -q .; then
