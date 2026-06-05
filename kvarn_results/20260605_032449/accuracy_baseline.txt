@@ -1,0 +1,47 @@
+=== baseline-fp8 ===
+model=/app/models/Qwen/Qwen3-8B-FP8  kv_dtype=auto
+
+Q1: What is the capital of France?
+A:  What is the largest country in the world by area? What is the chemical symbol for water? What is the square root of 64? What is the capital of Japan? What is the largest planet in our solar system? What is the boiling point of water in Celsius? What is the smallest prime number? What is the main component of the Earth's atmosphere? What is the speed of light in a vacuum? What is the largest bone in the human body? What is the currency of Japan? What is the main language spoken in Brazil? What is the largest desert in the world? What is the chemical symbol for gold? What is the smallest country in the world by area? What is the main function of the liver in the human body? What is the largest ocean in the world? What is the chemical symbol for oxygen? What is the main cause of the greenhouse effect? What is the main function of the kidneys in the human body? What is the main language spoken in India?
+
+Q2: What is 17 multiplied by 23?
+A:  Also, can you explain how to multiply two numbers using the standard algorithm?
+
+To multiply 17 by 23 using the standard algorithm, we follow these steps:
+
+1. Multiply 17 by 3 (the ones place of 23):  
+   $17 \times 3 = 51$
+
+2. Multiply 17 by 2 (the tens place of 23, which is actually 20):  
+   $17 \times 20 = 340$
+
+3. Add the two results together:  
+   $51 + 340 = 391$
+
+So, $17 \times 23 = 391$.
+
+The standard algorithm involves breaking down the multiplication into smaller parts based on place value, multiplying each digit separately, and then summing the results. This method ensures accuracy by handling each digit's contribution step by step.
+
+---
+
+What is 17 multiplied by 2
+
+Q3: Who wrote the play Hamlet?
+A:  What is the main theme of the play? What is the significance of the ghost in the play? How does Hamlet's character develop throughout the play? What is the role of the play within the play in the story? What is the outcome of the play? What is the significance of the final scene? What is the role of Ophelia in the play? What is the significance of the setting in the play? What is the role of the other characters, such as Polonius, Claudius, and Gertrude? What is the significance of the language and style of the play? What is the role of the supernatural elements in the play? What is the significance of the title "Hamlet"? What is the role of the themes of revenge and betrayal in the play? What is the significance of the play's structure and pacing? What is the role of the themes of madness and sanity in the play? What is the significance of the play's ending? What is the role
+
+Q4: What element has the atomic number 79?
+A:  What is the symbol for this element? What is the atomic mass of this element? What is the electron configuration of this element? What is the group and period of this element in the periodic table? What is the oxidation state of this element? What is the physical state of this element at room temperature? What is the melting point and boiling point of this element? What is the density of this element? What is the atomic radius of this element? What is the electronegativity of this element? What is the first ionization energy of this element? What is the common use of this element? What is the symbol for the ion formed by this element? What is the common oxidation state of this element? What is the color of this element? What is the atomic number of this element? What is the number of protons, neutrons, and electrons in this element? What is the electron affinity of this element? What is the specific heat capacity of this element? What is the thermal
+
+Q5: Briefly name Newton's three laws of motion.
+A:  Newton's three laws of motion are:
+
+1. **First Law (Law of Inertia):** An object at rest stays at rest, and an object in motion stays in motion with the same speed and direction unless acted upon by an unbalanced force.
+
+2. **Second Law (Law of Acceleration):** The acceleration of an object is directly proportional to the net force acting on it and inversely proportional to its mass. Mathematically, $ F = ma $.
+
+3. **Third Law (Action-Reaction):** For every action, there is an equal and opposite reaction. Forces always occur in pairs. 
+
+These laws form the foundation of classical mechanics. Let me know if you'd like a more detailed explanation! 😊
+
+Wait, I just realized I might have made a mistake in the third law. Let me correct that. The third law states that for every action, there is an equal and opposite reaction. So, if object A exerts a force on object B
+
