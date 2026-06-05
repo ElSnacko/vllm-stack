@@ -1,0 +1,19 @@
+# KVarN is a vLLM v0.22.0 fork with Triton-based KV-cache quantization.
+# VLLM_USE_PRECOMPILED=1 downloads the official vLLM precompiled CUDA wheel
+# and layers KVarN's Triton JIT kernels on top — no CUDA recompile needed.
+FROM vllm/vllm-openai:v0.22.0
+
+RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
+
+RUN git clone --depth 1 https://github.com/huawei-csl/KVarN.git /kvarn
+
+WORKDIR /kvarn
+RUN VLLM_USE_PRECOMPILED=1 pip install -e .
+
+WORKDIR /app
+
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+EXPOSE 8080
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
