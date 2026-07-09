@@ -315,6 +315,28 @@ def list_model_files(hf, repo_id: str, token) -> list[tuple]:
         die(str(e))
 
 
+def detect_quantization(out_dir: Path) -> str | None:
+    """Read config.json's quantization_config.quant_method — the exact value
+    vLLM's --quantization flag expects (modelopt, compressed-tensors, fp8, awq, ...)."""
+    config_path = out_dir / "config.json"
+    if not config_path.exists():
+        return None
+    try:
+        import json
+        with open(config_path) as f:
+            config = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return None
+    return (config.get("quantization_config") or {}).get("quant_method")
+
+
+def print_quantization_hint(out_dir: Path):
+    quant = detect_quantization(out_dir)
+    if quant:
+        print(f"\n{blue('Detected quantization:')} {green(quant)}")
+        print(f"  Add to vllm.args:  {cyan(f'--quantization {quant}')}")
+
+
 def download_model(hf, repo_id: str, token) -> Path:
     _, Gated, NotEntry, HttpErr = _errors(hf)
 
@@ -331,6 +353,7 @@ def download_model(hf, repo_id: str, token) -> Path:
             ans = "n"
         if ans.strip().lower() != "y":
             print(green(f"Using existing: {out_dir}"))
+            print_quantization_hint(out_dir)
             return out_dir
         shutil.rmtree(out_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -361,6 +384,7 @@ def download_model(hf, repo_id: str, token) -> Path:
         )
 
         print(green(f"✓  {out_dir}"))
+        print_quantization_hint(out_dir)
         return out_dir
 
     except Gated:
