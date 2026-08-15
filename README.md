@@ -217,16 +217,6 @@ The `--chat-template` / `TRUST_CHAT_TEMPLATE` mechanism is needed in either case
 - **download_model.py**: Added `except HttpErr` catch in `download_model()` — network errors now show friendly message instead of raw traceback
 - **download_model.sh**: Added friendly error message when `python3` is not installed
 
-## Model Swap (2026-08-14)
-
-Switched the running model from `Qwen3.6-27B-uncensored-heretic-v2-NVFP4-full` (self-quant, `llm_models/self-quant/`) to `unsloth/Qwen3.8-27B-NVFP4` (`llm_models/hf/unsloth/`). Changes required:
-
-- **`.env`**: `MODEL_NAME` → `Qwen3.8-27B-NVFP4`, `MODEL_DIR` → `./llm_models/hf/unsloth`, `MAX_MODEL_LEN` `160000` → `150000` (see Memory Layout above).
-- **`vllm.args`**: removed `--quantization modelopt` — this checkpoint is `compressed-tensors` mixed-precision, not modelopt format; vLLM auto-detects it from `config.json`.
-- **`llm_models/hf/unsloth/Qwen3.8-27B-NVFP4/chat_template.jinja`**: fetched from the upstream HF repo (wasn't included in whatever pulled the weights — no `.download_logs` entry for this model either, unlike models fetched via `download_model.py`). Without it, every chat request 400'd.
-
-Reasoning/tool-call parsers (`qwen3`, `qwen3_xml`) and the MTP speculative config were left unchanged — verified compatible against the new checkpoint's chat template (`<function`/`tool_call` XML markers, `reasoning`/`thinking` blocks) and MTP tensors (`model_mtp.safetensors`) before restarting.
-
 ## Differences from the llama.cpp Stack
 
 | Aspect | llama.cpp stack | vLLM stack |
