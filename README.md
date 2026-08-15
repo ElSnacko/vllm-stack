@@ -117,36 +117,30 @@ Single source of truth: `versions/active` file (plain text with the Docker tag).
 - **GPU_MEMORY_UTILIZATION=0.95** — leave 5% headroom for CUDA overhead; adjust down if OOMs
 - **Tensor parallelism** — single GPU, so `TENSOR_PARALLEL_SIZE=1`; not applicable unless multi-GPU
 
-### Memory Layout for Qwen3.6-27B-Text-NVFP4-MTP
+### Memory Layout for Qwen3.8-27B-NVFP4 (current model, as of 2026-08-14)
 
-This 27B NVFP4-quantized model has unique constraints on the RTX 5090's 32 GB VRAM:
+Currently running: `unsloth/Qwen3.8-27B-NVFP4` (`llm_models/hf/unsloth/Qwen3.8-27B-NVFP4/`), a mixed-precision `compressed-tensors` checkpoint — NVFP4 for most MLP gate/up/down projections, FP8 dynamic-per-token for attention q/k/v/o, `lm_head`, and the last 8 MLP blocks. It ships with an MTP draft head (`model_mtp.safetensors`) and a real vision tower, though vLLM currently runs it in text-only mode (no registered multimodal processor for this architecture — see below).
 
-| Component | Memory |
-|---|---|
-| Model weights (NVFP4) | 17.76 GiB |
-| torch.compile artifacts | +12.47 GiB |
-| **Total with compile** | **30.23 GiB** |
-| CUDA graph profiling overhead | +1.53 GiB |
-| **Total needed for CUDA graphs** | **31.76 GiB > 31.36 GiB** |
-
-torch.compile consumes 12.47 GiB on top of model weights, leaving only ~1.13 GiB free. CUDA graph profiling needs 1.53 GiB, so it OOMs regardless of context length — even at 8K tokens.
-
-**Working configuration** (`ENFORCE_EAGER=1`, `KV_CACHE_DTYPE=fp8`):
+Unlike the earlier modelopt-format checkpoints on this box, `--quantization` is **not** set in `vllm.args` — vLLM auto-detects `compressed-tensors` from `config.json`'s `quantization_config.quant_method`. Forcing `--quantization modelopt` (used for older sakamakismile/self-quant checkpoints) breaks loading of this format.
 
 | Component | Memory |
 |---|---|
-| Model weights | 17.76 GiB |
-| Available KV cache (fp8) | 10.8 GiB |
-| Max context length | 174,048 tokens |
-| Generation throughput | ~23 tokens/s |
+| Model weights (mixed NVFP4/FP8) | 21.97 GiB |
+| KV cache needed @ 160K context (fp8_e4m3) | 5.97 GiB |
+| Available KV cache @ `GPU_MEMORY_UTILIZATION=0.98` | 5.81 GiB |
 
-The enforce-eager flag disables both torch.compile and CUDA graphs, freeing the 12+ GiB compile overhead for KV cache. The fp8 KV cache doubles effective cache capacity vs bf16. The `--language-model-only` and `--runner generate` flags are auto-applied by `entrypoint.sh` for text-only models that use a multimodal architecture name (e.g., `Qwen3_5ForConditionalGeneration` without a `preprocessor_config.json`).
+At 160K context this checkpoint OOMs during KV-cache pre-allocation — it has ~2 GiB less headroom than the older modelopt-format Qwen3.6 checkpoint at the same weight-size ballpark, because of the FP8 attention path's overhead. **Working configuration**: `MAX_MODEL_LEN=150000` (vLLM's own estimate capped the ceiling at ~153,600; 150000 leaves a small margin), `GPU_MEMORY_UTILIZATION=0.98`, `ENFORCE_EAGER=` (blank — CUDA graphs on), `KV_CACHE_DTYPE=fp8_e4m3`.
+
+The chat template matters here too: this specific download did not include `chat_template.jinja` (unlike the other models under `llm_models/`, which all have one either embedded in `tokenizer_config.json` or as a sibling file) — it was fetched separately from the upstream `unsloth/Qwen3.8-27B-NVFP4` repo and placed at `llm_models/hf/unsloth/Qwen3.8-27B-NVFP4/chat_template.jinja`. Requests fail with a 400 (`"default chat template is no longer allowed"`) if this file is missing. Notably, Qwen3.8's template adds a `reasoning_effort` request parameter (`xhigh`/`medium`/`low`, defaults to `xhigh`) not present in the Qwen3.6 template — don't reuse a Qwen3.6 template as a stand-in for a missing Qwen3.8 one, they've diverged.
 
 ### Text-Only Models with Multimodal Architecture Names
 
-Some quantized models (like the NVFP4 variant of Qwen3.6) ship with `architectures: ["Qwen3_5ForConditionalGeneration"]` in `config.json` but lack `preprocessor_config.json`, making them text-only. vLLM's model registry maps this architecture to the multimodal `qwen3_vl` handler, which fails trying to load an image processor.
+Some quantized Qwen3.5/3.6/3.8-family models ship with `architectures: ["Qwen3_5ForConditionalGeneration"]` in `config.json`. Two distinct situations both land in vLLM's text-only fallback, for different reasons:
 
-The `entrypoint.sh` auto-detects this case: if `config.json` contains `ConditionalGeneration` but `preprocessor_config.json` is absent, it passes `--runner generate` and `--language-model-only` to vLLM. The `--chat-template` flag is also needed because the NVFP4 quantization strips the `chat_template` field from `tokenizer_config.json` (ChatML format is used for Qwen3 models).
+1. **Genuinely text-only, mislabeled.** No `preprocessor_config.json`, no vision tensors in the weights — the architecture name is just inherited from the base model family. `entrypoint.sh` auto-detects this: if `config.json` contains `ConditionalGeneration` but `preprocessor_config.json` is absent, it passes `--runner generate` and `--language-model-only` to vLLM. (Applied to the earlier `llmfan46`/self-quant Qwen3.6 checkpoints on this box.)
+2. **Genuinely multimodal, but unsupported.** Has `preprocessor_config.json` and real `model.visual.*` vision-tower tensors (true of the current Qwen3.8-27B-NVFP4), but vLLM has no multimodal processor registered for this exact architecture yet, so it logs `"treated as multimodal but has no registered multimodal processor; running in text-only mode"` and serves text-only anyway — no explicit flags needed, vLLM falls back on its own. Vision input will not work until vLLM adds support.
+
+The `--chat-template` / `TRUST_CHAT_TEMPLATE` mechanism is needed in either case whenever the checkpoint's `tokenizer_config.json` lacks an embedded `chat_template` and no sibling `chat_template.jinja` was downloaded — ChatML format is used across the Qwen3 family, but always prefer the model's own template file when one exists rather than borrowing another checkpoint's.
 
 ## Development Commands
 
@@ -222,6 +216,16 @@ The `entrypoint.sh` auto-detects this case: if `config.json` contains `Condition
 - **stop_vllm_server.sh**: Removed unnecessary `--env-file` from `docker compose down` — only project name is needed for stop
 - **download_model.py**: Added `except HttpErr` catch in `download_model()` — network errors now show friendly message instead of raw traceback
 - **download_model.sh**: Added friendly error message when `python3` is not installed
+
+## Model Swap (2026-08-14)
+
+Switched the running model from `Qwen3.6-27B-uncensored-heretic-v2-NVFP4-full` (self-quant, `llm_models/self-quant/`) to `unsloth/Qwen3.8-27B-NVFP4` (`llm_models/hf/unsloth/`). Changes required:
+
+- **`.env`**: `MODEL_NAME` → `Qwen3.8-27B-NVFP4`, `MODEL_DIR` → `./llm_models/hf/unsloth`, `MAX_MODEL_LEN` `160000` → `150000` (see Memory Layout above).
+- **`vllm.args`**: removed `--quantization modelopt` — this checkpoint is `compressed-tensors` mixed-precision, not modelopt format; vLLM auto-detects it from `config.json`.
+- **`llm_models/hf/unsloth/Qwen3.8-27B-NVFP4/chat_template.jinja`**: fetched from the upstream HF repo (wasn't included in whatever pulled the weights — no `.download_logs` entry for this model either, unlike models fetched via `download_model.py`). Without it, every chat request 400'd.
+
+Reasoning/tool-call parsers (`qwen3`, `qwen3_xml`) and the MTP speculative config were left unchanged — verified compatible against the new checkpoint's chat template (`<function`/`tool_call` XML markers, `reasoning`/`thinking` blocks) and MTP tensors (`model_mtp.safetensors`) before restarting.
 
 ## Differences from the llama.cpp Stack
 

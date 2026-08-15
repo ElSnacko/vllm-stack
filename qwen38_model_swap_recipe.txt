@@ -1,0 +1,103 @@
+RECIPE: Swapping the served model in vllm-stack
+Task: correct running model from Qwen3.6-27B (self-quant) to Qwen3.8-27B-NVFP4 (unsloth)
+Date: 2026-08-14
+
+WHY THIS RECIPE EXISTS
+-----------------------
+The .env pointed at Qwen3.6-27B-uncensored-heretic-v2-NVFP4-full, but the actually
+intended model was Qwen3.8-27B, which was already downloaded to
+llm_models/hf/unsloth/Qwen3.8-27B-NVFP4/ but never wired into .env/vllm.args. This
+is the general procedure used to diagnose and fix that, written up so the same
+steps can be reused for the next model swap.
+
+STEP 1 — Confirm what's actually running vs. what's on disk
+-------------------------------------------------------------
+  curl -s localhost:8080/v1/models
+  docker logs <container> 2>&1 | grep -i model
+Cross-check against every local model location, not just the "obvious" one:
+  find llm_models/hf -maxdepth 2 -type d
+  find llm_models/self-quant -maxdepth 1 -type d
+  find ~/.cache/huggingface/hub -maxdepth 1 -iname "*<name>*"
+Don't trust directory naming alone — grep config.json's "architectures" /
+"model_type" and the HF cache repo path to confirm identity.
+
+STEP 2 — Inspect the target model's actual format before touching config
+---------------------------------------------------------------------------
+This is the step that avoids a broken restart. Check, in the model dir:
+  a) quantization_config in config.json -> quant_method field
+     ("modelopt" vs "compressed-tensors" -- these need DIFFERENT vllm.args;
+     forcing the wrong --quantization flag breaks loading entirely)
+  b) presence of model_mtp.safetensors -> speculative-config compatibility
+  c) presence of preprocessor_config.json + scan model.safetensors header for
+     "vision"/"visual" tensor names -> is this genuinely multimodal, or a
+     text-only model with a multimodal architecture name? (affects whether
+     entrypoint.sh's --language-model-only auto-detect should fire)
+  d) tokenizer_config.json for an embedded "chat_template" key, AND look for a
+     sibling chat_template.jinja file. If neither exists, requests will 400
+     with "default chat template is no longer allowed" until one is supplied.
+  e) du -sh the model dir + weight file sizes -> rough VRAM budget sanity check
+
+STEP 3 — Edit config to match what step 2 found
+---------------------------------------------------
+.env:
+  MODEL_NAME=<new model dir name>
+  MODEL_DIR=<path to the parent dir containing it>
+  (leave MAX_MODEL_LEN/GPU_MEMORY_UTILIZATION as-is for the first attempt --
+   you'll tune these in step 5 based on the actual OOM message, don't guess)
+
+vllm.args:
+  --quantization <modelopt|compressed-tensors|omit for auto-detect>
+  Remove/adjust anything that assumed the OLD model's format.
+  Leave reasoning-parser / tool-call-parser / speculative-config alone unless
+  step 2 showed a reason to change them (different tag format in the chat
+  template, no MTP tensors, etc).
+
+If chat_template.jinja is missing (step 2d), fetch the model's OWN template --
+do not reuse a sibling/older model's template, even same family. Templates
+diverge (this swap's Qwen3.8 template added a reasoning_effort parameter that
+Qwen3.6's didn't have). Get it straight from the source repo:
+  curl -sf "https://huggingface.co/<org>/<repo>/raw/main/chat_template.jinja" \
+    -o <model_dir>/chat_template.jinja
+Verify file list first if unsure it exists:
+  curl -s "https://huggingface.co/api/models/<org>/<repo>" | python3 -c \
+    "import json,sys; print([s['rfilename'] for s in json.load(sys.stdin)['siblings']])"
+
+STEP 4 — Restart via the repo's own tooling, not raw docker commands
+------------------------------------------------------------------------
+  ./stop_vllm_server.sh <port>      # if a stale/crash-looping container exists
+  ./run_vllm_server.sh --wait 240
+run_vllm_server.sh already handles: image build-if-missing, `dc down` of any
+existing instance, `dc up -d`, and health polling. Don't hand-roll `docker run`.
+
+STEP 5 — If it OOMs on KV cache, read the exact numbers vLLM gives you
+---------------------------------------------------------------------------
+  docker compose -p vllm-<port> logs vllm-server | grep -B5 "RuntimeError: Engine core"
+Look for the ValueError just above it -- it states needed vs. available KV
+cache memory AND vLLM's own suggested max context length. Set MAX_MODEL_LEN
+a bit BELOW that suggestion (not exactly at it -- leaves rounding margin),
+edit .env, then repeat step 4. Don't blindly raise GPU_MEMORY_UTILIZATION
+past ~0.98 on a single-user box; there's little headroom left to give.
+
+STEP 6 — Verify end-to-end, not just /health
+------------------------------------------------
+  curl -s localhost:8080/v1/models | python3 -m json.tool
+  curl -s localhost:8080/v1/chat/completions -H 'Content-Type: application/json' \
+    -d '{"model":"<served model id>","messages":[{"role":"user","content":"Say OK and nothing else."}],"max_tokens":20}'
+/health only proves the process is up; it does not prove the chat template,
+tool-call parser, or quantization kernels actually work. A real chat
+completion call is the only thing that proves all of it end-to-end.
+
+GOTCHAS HIT THIS RUN (for next time)
+----------------------------------------
+- MODEL_DIR is a docker-compose bind-mount source -- changing it requires a
+  full container recreate (down+up), not just an env change on a running
+  container. run_vllm_server.sh does this automatically via `dc down`/`dc up`.
+- A model with real vision-tower weights can still end up served text-only:
+  vLLM falls back automatically when it has no registered multimodal
+  processor for the architecture, no flag needed. Don't confuse this with
+  the entrypoint.sh auto-detect for models that are text-only AND mislabeled
+  -- they look similar in the logs but are different code paths.
+- Whatever tool downloaded Qwen3.8-27B-NVFP4 to llm_models/hf/unsloth/ did NOT
+  go through download_model.py (no entry in llm_models/.download_logs/) and
+  silently skipped chat_template.jinja. Always check for a missing template
+  file after any download that didn't go through the repo's own script.
