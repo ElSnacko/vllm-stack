@@ -38,6 +38,7 @@ services:
       - KV_CACHE_DTYPE=${KV_CACHE_DTYPE:-auto}
       - SPECULATIVE_CONFIG=${SPECULATIVE_CONFIG:-}
       - CHAT_TEMPLATE=${CHAT_TEMPLATE:-}
+      - TRUST_CHAT_TEMPLATE=${TRUST_CHAT_TEMPLATE:-}
     ulimits:
       memlock:
         soft: -1
