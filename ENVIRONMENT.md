@@ -29,7 +29,7 @@ Current production setup for this box: vLLM 0.27.0 serving `unsloth/Qwen3.8-27B-
 - FP8 dynamic-per-token for attention q/k/v/o, `lm_head`, and the last 8 MLP blocks
 - MTP draft head included (`model_mtp.safetensors`) — enables speculative decoding
 - Has a real vision tower (333 `model.visual.*` tensors), but vLLM 0.27.0 has no registered multimodal processor for this architecture yet, so it auto-falls-back to text-only serving. No flags needed for this — it's automatic.
-- **Does not ship `chat_template.jinja` in this local copy** — fetch it separately before serving (step 4 below), or every request 400s with `"default chat template is no longer allowed"`.
+- Ships `chat_template.jinja` as a sibling file in the upstream repo — `download_model.py` now pulls it down automatically with the rest of the model files. (Older local copies predating that fix may be missing it, which 400s every request with `"default chat template is no longer allowed"`; re-download or fetch the file by hand from `https://huggingface.co/unsloth/Qwen3.8-27B-NVFP4/raw/main/chat_template.jinja`.)
 
 ## Replicating this setup
 
@@ -42,15 +42,9 @@ Current production setup for this box: vLLM 0.27.0 serving `unsloth/Qwen3.8-27B-
    cp vllm.args.example vllm.args
    ```
 
-3. **Get the model.** Download `unsloth/Qwen3.8-27B-NVFP4` (or via `./download_model.sh unsloth/Qwen3.8-27B-NVFP4 --all`) into `llm_models/hf/unsloth/Qwen3.8-27B-NVFP4/`.
+3. **Get the model.** Download `unsloth/Qwen3.8-27B-NVFP4` (via `./download_model.py unsloth/Qwen3.8-27B-NVFP4 --all`) into `llm_models/hf/unsloth/Qwen3.8-27B-NVFP4/` — this pulls `chat_template.jinja` along with the rest of the model files.
 
-4. **Fetch the chat template** (this copy's download source skipped it):
-   ```
-   curl -sf "https://huggingface.co/unsloth/Qwen3.8-27B-NVFP4/raw/main/chat_template.jinja" \
-     -o llm_models/hf/unsloth/Qwen3.8-27B-NVFP4/chat_template.jinja
-   ```
-
-5. **Set `.env`**:
+4. **Set `.env`**:
    ```
    MODEL_NAME=Qwen3.8-27B-NVFP4
    MODEL_DIR=./llm_models/hf/unsloth
@@ -61,7 +55,7 @@ Current production setup for this box: vLLM 0.27.0 serving `unsloth/Qwen3.8-27B-
    ENFORCE_EAGER=
    ```
 
-6. **Set `vllm.args`**:
+5. **Set `vllm.args`**:
    ```
    --reasoning-parser qwen3
    --enable-auto-tool-choice
@@ -74,9 +68,9 @@ Current production setup for this box: vLLM 0.27.0 serving `unsloth/Qwen3.8-27B-
    ```
    (No `--quantization` flag — vLLM auto-detects `compressed-tensors` from the checkpoint's `config.json`.)
 
-7. **Start it**: `./run_vllm_server.sh --wait 240`
+6. **Start it**: `./run_vllm_server.sh --wait 240`
 
-8. **Verify**: `curl localhost:8080/v1/models`, then a real chat completion (not just `/health` — that only proves the process is up, not that the template/quant kernels/parsers actually work):
+7. **Verify**: `curl localhost:8080/v1/models`, then a real chat completion (not just `/health` — that only proves the process is up, not that the template/quant kernels/parsers actually work):
    ```
    curl localhost:8080/v1/chat/completions -H 'Content-Type: application/json' \
      -d '{"model":"<served id>","messages":[{"role":"user","content":"Say OK."}],"max_tokens":20}'
