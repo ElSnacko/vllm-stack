@@ -65,6 +65,11 @@ if [ -n "$COMPILATION_CONFIG" ]; then
     ARGS+=("--compilation-config" "$COMPILATION_CONFIG")
 fi
 
+SPECULATIVE_CONFIG="${SPECULATIVE_CONFIG:-}"
+if [ -n "$SPECULATIVE_CONFIG" ]; then
+    ARGS+=("--speculative-config" "$SPECULATIVE_CONFIG")
+fi
+
 ENFORCE_EAGER="${ENFORCE_EAGER:-}"
 if [ "$ENFORCE_EAGER" = "1" ]; then
     ARGS+=("--enforce-eager")
