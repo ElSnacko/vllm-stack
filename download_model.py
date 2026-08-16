@@ -26,7 +26,7 @@ MODEL_DIR = Path("./llm_models/hf")
 
 MODEL_FILE_PATTERNS = (
     ".safetensors", ".bin", ".pt", ".json", ".tiktoken",
-    ".model", ".txt", ".index", ".pattern",
+    ".model", ".txt", ".index", ".pattern", ".jinja",
 )
 
 SKIP_PATTERNS = (
